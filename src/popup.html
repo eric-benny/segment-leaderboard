@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Strava Leaderboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #fff;
+      width: 260px;
+      min-height: 180px;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #FC4C02, #E84300);
+      color: #fff;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .header .logo { font-size: 20px; }
+    .header h1 { font-size: 14px; font-weight: 700; line-height: 1.2; }
+    .header .sub { font-size: 11px; opacity: .8; margin-top: 1px; }
+
+    .body { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+
+    label {
+      font-size: 11px;
+      font-weight: 600;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: .4px;
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    input[type="number"], select {
+      width: 100%;
+      border: 1.5px solid #DDD;
+      border-radius: 6px;
+      padding: 7px 10px;
+      font-size: 13px;
+      color: #222;
+      outline: none;
+      background: #FAFAFA;
+      transition: border-color .15s;
+    }
+    input[type="number"]:focus, select:focus {
+      border-color: #FC4C02;
+      background: #fff;
+    }
+
+    #generate {
+      width: 100%;
+      background: #FC4C02;
+      color: #fff;
+      border: none;
+      border-radius: 7px;
+      padding: 9px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background .15s;
+      margin-top: 2px;
+    }
+    #generate:hover:not(:disabled) { background: #E84300; }
+    #generate:disabled { opacity: .65; cursor: default; }
+
+    /* ── Progress bar ──────────────────────────── */
+    #progress-widget {
+      display: none;
+      flex-direction: column;
+      gap: 5px;
+    }
+    #prog-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+    }
+    #prog-label {
+      font-size: 12px;
+      color: #555;
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #prog-pct {
+      font-size: 12px;
+      font-weight: 700;
+      color: #FC4C02;
+      min-width: 30px;
+      text-align: right;
+    }
+    #prog-track {
+      height: 7px;
+      background: #E8E8E8;
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+    }
+    #prog-track::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.5) 50%, transparent 100%);
+      background-size: 200% 100%;
+      animation: shimmer 1.6s infinite;
+    }
+    #prog-bar {
+      height: 100%;
+      background: linear-gradient(90deg, #FC4C02, #FF7043);
+      border-radius: 4px;
+      width: 0%;
+      transition: width 0.35s cubic-bezier(0.4,0,0.2,1);
+      position: relative;
+      z-index: 1;
+    }
+    #prog-bar.success { background: linear-gradient(90deg, #2E7D32, #43A047); }
+    @keyframes shimmer {
+      0%   { background-position: -200% 0; }
+      100% { background-position:  200% 0; }
+    }
+
+    #status {
+      font-size: 12px;
+      color: #555;
+      text-align: center;
+      line-height: 1.4;
+      min-height: 18px;
+    }
+    #status.ok  { color: #2E7D32; font-weight: 600; }
+    #status.err { color: #C62828; }
+
+    .hint {
+      font-size: 11px;
+      color: #AAA;
+      text-align: center;
+      line-height: 1.4;
+      padding: 0 4px;
+    }
+
+    .divider { border: none; border-top: 1px solid #F0F0F0; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">🏅</div>
+    <div>
+      <h1>Strava Leaderboard</h1>
+      <div class="sub">Monthly segment report</div>
+    </div>
+  </div>
+
+  <div class="body">
+    <div>
+      <label for="segmentId">Segment ID</label>
+      <input type="number" id="segmentId" placeholder="e.g. 36188250" min="1">
+    </div>
+
+    <div>
+      <label for="dateRange">Period</label>
+      <select id="dateRange">
+        <option value="this_month">This Month</option>
+        <option value="this_week">This Week</option>
+        <option value="this_year">This Year</option>
+        <option value="all_time">All Time</option>
+      </select>
+    </div>
+
+    <button id="generate">Generate Leaderboard</button>
+
+    <!-- Progress bar (shown while generating) -->
+    <div id="progress-widget">
+      <div id="prog-top">
+        <span id="prog-label">Starting…</span>
+        <span id="prog-pct">0%</span>
+      </div>
+      <div id="prog-track"><div id="prog-bar"></div></div>
+    </div>
+
+    <div id="status"></div>
+    <p class="hint" id="hint">Open a Strava segment page, or enter a segment ID above.</p>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
