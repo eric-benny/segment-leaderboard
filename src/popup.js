@@ -84,10 +84,10 @@ generateBtn.addEventListener('click', async () => {
     });
 
   } else {
-    // Open the segment page — content script will inject the button there
+    // Open the segment page so the content script can access Strava session
     chrome.storage.session.set({ pendingGenerate: { segmentId, dateRange } });
     chrome.tabs.create({ url: `https://www.strava.com/segments/${segmentId}` });
-    showStatus('Opened the segment page — click the orange button on Strava.', 'ok');
+    showStatus('Opened the segment page — use the extension popup to generate.', 'ok');
   }
 });
 

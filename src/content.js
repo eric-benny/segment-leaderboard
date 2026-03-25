@@ -2,11 +2,8 @@
  * Strava Segment Leaderboard — Content Script
  *
  * Runs automatically on https://www.strava.com/segments/* pages.
- * Injects a "Monthly Leaderboard" button + animated progress bar into the Strava UI.
- * On click, fetches all leaderboard pages using the existing Strava session
- * (no separate auth needed) and downloads a self-contained HTML file.
- *
- * Also responds to messages from the popup for custom segment ID / date range.
+ * Responds to messages from the popup to fetch leaderboard data using the existing
+ * Strava session (no separate auth needed) and downloads a self-contained HTML file.
  */
 (function () {
   'use strict';
@@ -18,11 +15,7 @@
     ATHLETES_PER_PAGE: 25,         // Strava's pagination size
     TOP_ATHLETES: 10,              // Number to display in HTML
     URL_REVOKE_DELAY_MS: 5000,     // Cleanup delay for blob URLs
-    SUCCESS_MSG_DURATION_MS: 2500, // Auto-hide success messages
-    ERROR_MSG_DURATION_MS: 4000,   // Auto-hide error messages
     INITIAL_PAGE_ESTIMATE: 5,      // Better starting estimate for progress
-    UI_INJECT_MAX_RETRIES: 5,      // Max attempts for UI injection
-    UI_INJECT_RETRY_DELAY_MS: 500, // Initial retry delay
     DEBUG_LOGGING: true            // Enable/disable debug logs
   };
 
@@ -48,196 +41,6 @@
   const PAGE_SEGMENT_ID = parseInt(pathMatch[1]);
   logger.debug('Detected segment page:', PAGE_SEGMENT_ID);
 
-  // ── Styles ───────────────────────────────────────────────────────────────────
-  function injectStyles() {
-    if (document.getElementById('lb-ext-styles')) return;
-    const style = document.createElement('style');
-    style.id = 'lb-ext-styles';
-    style.textContent = `
-      #lb-ext-wrapper {
-        margin: 10px 0 4px;
-        display: flex;
-        align-items: center;
-        flex-wrap: wrap;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      }
-
-      #lb-ext-btn {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        background: #FC4C02;
-        color: #fff;
-        border: none;
-        border-radius: 6px;
-        padding: 8px 14px;
-        font-size: 13px;
-        font-weight: 600;
-        cursor: pointer;
-        font-family: inherit;
-        line-height: 1;
-        transition: background .15s;
-        white-space: nowrap;
-      }
-      #lb-ext-btn:hover:not(:disabled)  { background: #E84300; }
-      #lb-ext-btn:disabled              { opacity: .7; cursor: default; }
-
-      /* ── Progress widget ──────────────────────────────────── */
-      #lb-ext-progress {
-        display: none;
-        flex-direction: column;
-        gap: 5px;
-        min-width: 240px;
-        max-width: 340px;
-      }
-
-      #lb-ext-prog-top {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-      }
-
-      #lb-ext-prog-label {
-        font-size: 12px;
-        color: #555;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        flex: 1;
-      }
-
-      #lb-ext-prog-pct {
-        font-size: 12px;
-        font-weight: 700;
-        color: #FC4C02;
-        min-width: 32px;
-        text-align: right;
-        flex-shrink: 0;
-      }
-
-      #lb-ext-prog-track {
-        height: 7px;
-        background: #E8E8E8;
-        border-radius: 4px;
-        overflow: hidden;
-        position: relative;
-      }
-
-      /* Shimmer on the unfilled section while active */
-      #lb-ext-prog-track::after {
-        content: '';
-        position: absolute;
-        inset: 0;
-        background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.4) 50%, transparent 100%);
-        background-size: 200% 100%;
-        animation: lb-shimmer 1.6s infinite;
-      }
-
-      #lb-ext-prog-bar {
-        height: 100%;
-        background: linear-gradient(90deg, #FC4C02, #FF7043);
-        border-radius: 4px;
-        width: 0%;
-        transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-        position: relative;
-        z-index: 1;
-      }
-
-      /* Success state */
-      #lb-ext-prog-bar.lb-success {
-        background: linear-gradient(90deg, #2E7D32, #43A047);
-        transition: width 0.2s ease;
-      }
-
-      @keyframes lb-shimmer {
-        0%   { background-position: -200% 0; }
-        100% { background-position:  200% 0; }
-      }
-    `;
-    document.head.appendChild(style);
-  }
-
-  // ── Inject UI into Strava page with retry logic ──────────────────────────────
-  /**
-   * Attempts to inject UI with exponential backoff retry logic
-   */
-  async function injectUIWithRetry(attempt = 1) {
-    if (document.getElementById('lb-ext-btn')) {
-      logger.debug('UI already injected');
-      return true;
-    }
-
-    const anchor =
-      document.querySelector('.segment-view .section-heading') ||
-      document.querySelector('[class*="SegmentDetail"] h1')?.closest('section') ||
-      document.querySelector('.details-container') ||
-      document.querySelector('.segment-header') ||
-      document.querySelector('main h1')?.closest('div') ||
-      document.querySelector('main');
-
-    if (!anchor) {
-      logger.warn(`UI injection attempt ${attempt}: No anchor element found`);
-
-      if (attempt < CONFIG.UI_INJECT_MAX_RETRIES) {
-        const delay = CONFIG.UI_INJECT_RETRY_DELAY_MS * Math.pow(2, attempt - 1);
-        logger.debug(`Retrying UI injection in ${delay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        return injectUIWithRetry(attempt + 1);
-      } else {
-        logger.error('UI injection failed after maximum retries');
-        return false;
-      }
-    }
-
-    injectStyles();
-
-    // Wrapper holds both button and progress widget
-    const wrapper = document.createElement('div');
-    wrapper.id = 'lb-ext-wrapper';
-
-    // Button
-    const btn = document.createElement('button');
-    btn.id = 'lb-ext-btn';
-    btn.innerHTML = '📊 Monthly Leaderboard';
-    btn.onclick = () => generateLeaderboard(PAGE_SEGMENT_ID, 'this_month').catch(() => {});
-
-    // Progress widget
-    const prog = document.createElement('div');
-    prog.id = 'lb-ext-progress';
-    prog.innerHTML = `
-      <div id="lb-ext-prog-top">
-        <span id="lb-ext-prog-label">Starting…</span>
-        <span id="lb-ext-prog-pct">0%</span>
-      </div>
-      <div id="lb-ext-prog-track">
-        <div id="lb-ext-prog-bar"></div>
-      </div>
-    `;
-
-    wrapper.appendChild(btn);
-    wrapper.appendChild(prog);
-    anchor.insertBefore(wrapper, anchor.firstChild);
-
-    logger.debug('UI successfully injected on attempt', attempt);
-    return true;
-  }
-
-  // Try immediately with retry logic
-  injectUIWithRetry().then(success => {
-    if (!success) {
-      logger.error('Failed to inject UI after all retries');
-    }
-  });
-
-  // Watch for Strava SPA navigation re-rendering the DOM
-  const observer = new MutationObserver(() => {
-    if (!document.getElementById('lb-ext-btn')) {
-      logger.debug('UI removed by DOM mutation, re-injecting...');
-      injectUIWithRetry();
-    }
-  });
-  observer.observe(document.body, { childList: true, subtree: true });
 
   // ── Progress tracker ─────────────────────────────────────────────────────────
   /**
@@ -296,55 +99,6 @@
     _notify() { this.onUpdate(this.pct, this._label); }
   }
 
-  // ── Progress UI helpers ───────────────────────────────────────────────────────
-  function showProgress() {
-    const btn  = document.getElementById('lb-ext-btn');
-    const prog = document.getElementById('lb-ext-progress');
-    if (btn)  { btn.style.display  = 'none'; }
-    if (prog) { prog.style.display = 'flex'; }
-    updateProgress(0, 'Starting…');
-  }
-
-  function updateProgress(pct, label) {
-    const bar   = document.getElementById('lb-ext-prog-bar');
-    const pctEl = document.getElementById('lb-ext-prog-pct');
-    const lblEl = document.getElementById('lb-ext-prog-label');
-    if (bar)   { bar.style.width = `${pct}%`; bar.classList.remove('lb-success'); }
-    if (pctEl) { pctEl.textContent = `${pct}%`; }
-    if (lblEl) { lblEl.textContent = label; }
-  }
-
-  function showSuccess() {
-    const bar   = document.getElementById('lb-ext-prog-bar');
-    const pctEl = document.getElementById('lb-ext-prog-pct');
-    const lblEl = document.getElementById('lb-ext-prog-label');
-    if (bar)   { bar.style.width = '100%'; bar.classList.add('lb-success'); }
-    if (pctEl) { pctEl.textContent = '100%'; pctEl.style.color = '#2E7D32'; }
-    if (lblEl) { lblEl.textContent = '✓ Downloaded!'; lblEl.style.color = '#2E7D32'; }
-  }
-
-  function showError(message) {
-    const bar   = document.getElementById('lb-ext-prog-bar');
-    const pctEl = document.getElementById('lb-ext-prog-pct');
-    const lblEl = document.getElementById('lb-ext-prog-label');
-    if (bar)   { bar.style.background = '#C62828'; }
-    if (pctEl) { pctEl.textContent = ''; }
-    if (lblEl) { lblEl.textContent = `✗ ${message}`; lblEl.style.color = '#C62828'; }
-  }
-
-  function hideProgress() {
-    const btn  = document.getElementById('lb-ext-btn');
-    const prog = document.getElementById('lb-ext-progress');
-    const bar  = document.getElementById('lb-ext-prog-bar');
-    const pct  = document.getElementById('lb-ext-prog-pct');
-    const lbl  = document.getElementById('lb-ext-prog-label');
-    if (btn)  { btn.style.display = ''; }
-    if (prog) { prog.style.display = 'none'; }
-    // Reset progress bar state for next run
-    if (bar)  { bar.style.width = '0%'; bar.style.background = ''; bar.classList.remove('lb-success'); }
-    if (pct)  { pct.style.color = ''; }
-    if (lbl)  { lbl.style.color = ''; }
-  }
 
   // ── Messages from popup ──────────────────────────────────────────────────────
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -371,7 +125,6 @@
 
   // ── Core leaderboard generation ──────────────────────────────────────────────
   async function generateLeaderboard(segmentId, dateRange) {
-    showProgress();
 
     // Phase → ProgressTracker key
     const PHASE = { all: 'overall', M: 'men', F: 'women' };
@@ -385,13 +138,7 @@
     const sleep = ms => new Promise(r => setTimeout(r, ms));
 
     const tracker = new ProgressTracker((pct, label) => {
-      const bar   = document.getElementById('lb-ext-prog-bar');
-      const pctEl = document.getElementById('lb-ext-prog-pct');
-      const lblEl = document.getElementById('lb-ext-prog-label');
-      if (bar)   bar.style.width = `${pct}%`;
-      if (pctEl) pctEl.textContent = `${pct}%`;
-      if (lblEl && label) lblEl.textContent = label;
-      // Also notify the popup if it's open
+      // Notify the popup if it's open
       try { chrome.runtime.sendMessage({ type: 'PROGRESS', pct, label }); } catch (_) {}
     });
 
@@ -538,13 +285,8 @@
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(dlUrl), CONFIG.URL_REVOKE_DELAY_MS);
 
-      showSuccess();
-      setTimeout(hideProgress, CONFIG.SUCCESS_MSG_DURATION_MS);
-
     } catch (err) {
       logger.error('Leaderboard generation failed:', err);
-      showError(err.message || 'Something went wrong — try again');
-      setTimeout(hideProgress, CONFIG.ERROR_MSG_DURATION_MS);
       throw err; // propagate so the popup message handler gets { ok: false }
     }
   }
@@ -686,6 +428,7 @@
     .strava-logo{height:14px;width:auto;display:block}
 
     /* ── Individual Shareable Cards ─────────────── */
+    .individual-cards{display:flex;flex-direction:column;align-items:center}
     .individual-card{background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 10px 40px rgba(11,30,63,.22);width:350px;margin-bottom:20px}
     .individual-header{background:#1A3A5C;color:#fff;padding:20px 24px;position:relative;overflow:hidden}
     .individual-title{font-size:18px;font-weight:800;letter-spacing:-.2px;color:#fff;display:flex;align-items:center;gap:10px;margin-bottom:6px}
