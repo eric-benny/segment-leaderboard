@@ -1,7 +1,7 @@
 # Strava Segment Leaderboard
 
 [![Latest Release](https://img.shields.io/github/v/release/eric-benny/segment-leaderboard)](https://github.com/eric-benny/segment-leaderboard/releases)
-[![License](https://img.shields.io/github/license/eric-`benny/segment-leaderboard)](LICENSE)
+[![License](https://img.shields.io/github/license/eric-benny/segment-leaderboard)](LICENSE)
 
 Chrome extension for extracting shareable monthly top-10 leaderboard cards from Strava segments.
 
@@ -37,8 +37,8 @@ This Chrome extension is distributed for local developer mode installation only.
 
 3. **Verify Installation**
    - Navigate to any Strava segment page (e.g., `https://www.strava.com/segments/12345`)
-   - You should see a "Monthly Leaderboard" button injected on the page
    - Click the extension icon in your Chrome toolbar to access the popup interface
+   - The popup should automatically detect the segment ID from your current tab
 
 ### Updating the Extension
 
@@ -50,11 +50,12 @@ When a new version is released:
 
 ## Usage
 
-1. Navigate to any Strava segment page
-2. Click the "Monthly Leaderboard" button OR use the popup to enter segment ID
+1. Navigate to any Strava segment page (or enter a segment ID manually)
+2. Click the extension icon in your Chrome toolbar
 3. Select date range (This Month, This Week, This Year, All Time)
-4. Extension fetches leaderboard data and generates a downloadable HTML card
-5. Save and share the top-10 leaderboard card
+4. Click "Generate Leaderboard"
+5. Extension fetches leaderboard data and generates a downloadable HTML card
+6. Save and share the top-10 leaderboard card
 
 ## Development
 
