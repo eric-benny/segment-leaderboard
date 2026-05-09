@@ -159,19 +159,35 @@
           const n = parseInt(a.textContent.trim());
           if (!isNaN(n) && n > totalPages) totalPages = n;
         });
+        const headerCells = Array.from(table.querySelectorAll('thead th'));
+        const headers = headerCells.map(th => th.textContent.trim().toLowerCase());
+        const find = (...terms) => headers.findIndex(h => terms.some(t => h.includes(t)));
+        const cols = {
+          date: find('date'),
+          pace: find('pace', 'speed'),
+          vam:  find('vam'),
+          hr:   find('hr', 'heart'),
+          time: find('time'),
+        };
+        const hasVam = cols.vam >= 0;
+        const minCols = headerCells.length || 6;
+        const getText = (c, idx) =>
+          idx >= 0 && c[idx] ? c[idx].textContent.trim().replace(/\s+/g, ' ') : '';
         const rows = Array.from(table.querySelectorAll('tbody tr'))
-          .filter(row => row.children.length >= 6) // Skip rows without enough columns (empty state messages)
+          .filter(row => row.children.length >= minCols)
           .map((row, i) => {
             const c = row.children;
             const rt = c[0].textContent.trim();
-            return {
+            const entry = {
               Rank: (rt && !isNaN(parseInt(rt))) ? parseInt(rt) : (pageNum - 1) * CONFIG.ATHLETES_PER_PAGE + i + 1,
               Name: (c[1].querySelector('a') || c[1]).textContent.trim(),
-              Date: c[2].textContent.trim(),
-              Pace: c[3].textContent.trim().replace(/\s+/g, ' '),
-              HR:   c[4].textContent.trim().replace(/\s+/g, ' '),
-              Time: c[5].textContent.trim().replace(/\s+/g, ' '),
+              Date: getText(c, cols.date),
+              Pace: getText(c, cols.pace),
+              HR:   getText(c, cols.hr),
+              Time: getText(c, cols.time),
             };
+            if (hasVam) entry.VAM = getText(c, cols.vam);
+            return entry;
           });
         return { rows, totalPages };
       }
@@ -477,7 +493,7 @@ async function exportExcel(btn){
   try{
     if(!window.XLSX){await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
     const d=JSON.parse(document.getElementById('lb-data').textContent);
-    function makeSheet(rows){const ws=XLSX.utils.json_to_sheet(rows,{header:['Rank','Name','Date','Pace','HR','Time']});ws['!cols']=[{wch:7},{wch:28},{wch:14},{wch:12},{wch:12},{wch:10}];return ws;}
+    function makeSheet(rows){const hasVam=rows.some(r=>r.VAM);const hdr=hasVam?['Rank','Name','Date','Pace','VAM','HR','Time']:['Rank','Name','Date','Pace','HR','Time'];const ws=XLSX.utils.json_to_sheet(rows,{header:hdr});ws['!cols']=hasVam?[{wch:7},{wch:28},{wch:14},{wch:12},{wch:10},{wch:12},{wch:10}]:[{wch:7},{wch:28},{wch:14},{wch:12},{wch:12},{wch:10}];return ws;}
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,makeSheet(d.overall),'Overall');
     XLSX.utils.book_append_sheet(wb,makeSheet(d.men),'Men');
